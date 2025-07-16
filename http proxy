@@ -1,0 +1,21 @@
+from flask import Flask, request, Response
+import requests
+
+app = Flask(__name__)
+TARGET = "www.youtube.com"  # এখানেই forward হবে
+
+@app.route('/', defaults={'path': ''}, methods=['GET', 'POST'])
+@app.route('/<path:path>', methods=['GET', 'POST'])
+def proxy(path):
+    resp = requests.request(
+        method=request.method,
+        url=f"{TARGET}/{path}",
+        headers={key: value for key, value in request.headers if key != 'Host'},
+        data=request.get_data(),
+        cookies=request.cookies,
+        allow_redirects=False
+    )
+    return Response(resp.content, resp.status_code, resp.headers.items())
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)

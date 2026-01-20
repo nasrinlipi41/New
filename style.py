@@ -1,6 +1,9 @@
 # --- Your existing bot code starts here ---
 # (Keep all your current code for the Telegram bot)
 # For example:
+from flask import Flask
+import threading
+import os
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import logging
 
@@ -36,10 +39,6 @@ def main():
 # ============================================
 # NEW CODE: Minimal Flask server for Render
 # ============================================
-from flask import Flask
-import threading
-import os
-
 app = Flask(__name__)
 
 @app.route('/')

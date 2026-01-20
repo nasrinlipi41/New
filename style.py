@@ -4,7 +4,7 @@
 from flask import Flask
 import threading
 import os
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters
 import logging
 
 # Enable logging

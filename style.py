@@ -889,7 +889,7 @@ def home():
         <p style="margin-top: 40px;">Send <code>/start</code> to <a href="https://t.me/YourBotUsername">@YourBotUsername</a> on Telegram</p>
     </body>
     </html>
-    """.format(time.time() - app_start_time)
+    """format(time.time() - app_start_time)
 
 @app.route('/health')
 def health():

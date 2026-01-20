@@ -1,15 +1,10 @@
-import os
 import sqlite3
 import logging
 import asyncio
 import random
 import hashlib
 import threading
-import time
-import requests
 from typing import Dict, List, Tuple
-from datetime import datetime
-from flask import Flask, request, Response, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -23,29 +18,14 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 from contextlib import contextmanager
 
-# ==================== RENDER-SPECIFIC SETUP ====================
-# Get token from environment variable (NOT hardcoded!)
-BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
-if not BOT_TOKEN:
-    print("❌ ERROR: TELEGRAM_TOKEN environment variable is not set!")
-    print("Please set it in Render dashboard: Environment → Add TELEGRAM_TOKEN")
-    print("Example: TELEGRAM_TOKEN=7690309938:AAGxZaZztsxWOucrIo5UiLXusagQOBvbksw")
-    exit(1)
-
-ADMIN_IDS = [5487394544]  # Your Telegram ID
+# ==================== CONFIGURATION ====================
+BOT_TOKEN = '8520054544:AAE_fT379ilqkYBtnH8L7B4JsITpWegJfu4'
+ADMIN_IDS = [5487394544]
 DB_NAME = 'stylish_name_bot.db'
 ITEMS_PER_PAGE = 10
 MAX_NAME_LENGTH = 30
 
-# ==================== FLASK APP FOR RENDER ====================
-app = Flask(__name__)
-
-# Global variables for tracking
-last_ping_time = time.time()
-app_start_time = time.time()
-bot_application = None  # Will be initialized properly
-
-# ==================== ENHANCED LOGGING ====================
+# ==================== LOGGING ====================
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -164,6 +144,50 @@ class FontStyles:
     FONTS = {
         'bold': "𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵",
         'italic': "𝘢𝘣𝘤𝘥𝘦𝘧𝘨𝘩𝘪𝘫𝘬𝘭𝘮𝘯𝘰𝘱𝘲𝘳𝘴𝘵𝘶𝘷𝘸𝘹𝘺𝘻𝘈𝘉𝘊𝘋𝘌𝘍𝘎𝘏𝘐𝘑𝘒𝘓𝘔𝘕𝘖𝘗𝘘𝘙𝘚𝘛𝘜𝘝𝘞𝘟𝚈𝚉0123456789",
+        'bold_italic': "𝙖𝙗𝙘𝙙𝙚𝙛𝙜𝙝𝙞𝙟𝙠𝙡𝙢𝙣𝙤𝙥𝙦𝙧𝙨𝙩𝙪𝙫𝙬𝙭𝙮𝙯𝘼𝘽𝘾𝘿𝙀𝙁𝙂𝙃𝙄𝙅𝙆𝙇𝙈𝙉𝙊𝙋𝙌𝙍𝙎𝙏𝙐𝙑𝙒𝙓𝙔𝙕𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟿",
+        'monospace': "𝚊𝚋𝚌𝚍𝚎𝚏𝚐𝚑𝚒𝚓𝚔𝚕𝚖𝚗𝚘𝚙𝚚𝚛𝚜𝚝𝚞𝚟𝚠𝚡𝚢𝚣𝙰𝙱𝙲𝙳𝙴𝙵𝙶𝙷𝙸𝙹𝙺𝙻𝙼𝙽𝙾𝙿𝚀𝚁𝚂𝚃𝚄𝚅𝚆𝚇𝚈𝚉𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿",
+        'cursive': "𝒶𝒷𝒸𝒹𝑒𝒻𝑔𝒽𝒾𝒿𝓀𝓁𝓂𝓃𝑜𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏𝒜𝐵𝒞𝒟𝐸𝐹𝒢𝐻𝐼𝒥𝒦𝐿𝑀𝒩𝒪𝒫𝒬𝑅𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵𝟢𝟣𝟤𝟥𝟦𝟧𝟨𝟩𝟪𝟫",
+        'fraktur': "𝔞𝔟𝔠𝔡𝔢𝔣𝔤𝔥𝔦𝔧𝔨𝔩𝔪𝔫𝔬𝔭𝔮𝔯𝔰𝔱𝔲𝔳𝔴𝔵𝔶𝔷𝔄𝔅ℭ𝔇𝔈𝔉𝔊ℌℑ𝔍𝔎𝔏𝔐𝔑𝔒𝔓𝔔ℜ𝔖𝔗𝔘𝔙𝔚𝔛𝔜ℨ0123456789",
+        'blackboard': "𝕒𝕓𝕔𝕕𝕖𝕗𝕘𝕙𝕚𝕛𝕜𝕝𝕞𝕟𝕠𝕡𝕢𝕣𝕤𝕥𝕦𝕧𝕨𝕩𝕪𝕫𝔸𝔹ℂ𝔻𝔼𝔽𝔾ℍ𝕀𝕁𝕂𝕃𝕄ℕ𝕆ℙℚℝ𝕊𝕋𝕌𝕍𝕎𝕏𝕐ℤ𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡",
+        'small_caps': "ᴀʙᴄᴅᴇғɢʜɪᴊᴋʟᴍɴᴏᴘǫʀsᴛᴜᴠᴡxʏᴢABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        'bubble': "ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩⒶⒷⒸⒹⒺⒻⒼⒽⒾⒿⓀⓁⓂⓃⓄⓅⓆⓇⓈⓉⓊⓋⓌⓍⓎⓏ⓪①②③④⑤⑥⑦⑧⑨",
+        'circled': "ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩⒶⒷⒸⒹⒺⒻⒼⒽⒾⒿⓀⓁⓂⓃⓄⓅⓆⓇⓈⓉⓊⓋⓌⓍⓎⓏ⓪①②③④⑤⑥⑦⑧⑨",
+        'square': "🄰🄱🄲🄳🄴🄵🄶🄷🄸🄹🄺🄻🄼🄽🄾🄿🅀🅁🅂🅃🅄🅅🅆🅇🅈🅉0123456789",
+        'gothic': "𝔄𝔅ℭ𝔇𝔈𝔉𝔊ℌℑ𝔍𝔎𝔏𝔐𝔑𝔒𝔓𝔔ℜ𝔖𝔗𝔘𝔙𝔚𝔛𝔜ℨ𝔞𝔟𝔠𝔡𝔢𝔣𝔤𝔥𝔦𝔧𝔨𝔩𝔪𝔫𝔬𝔭𝔮𝔯𝔰𝔱𝔲𝔳𝔴𝔵𝔶𝔷0123456789",
+        'double_struck': "𝔸𝔹ℂ𝔻𝔼𝔽𝔾ℍ𝕀𝕁𝕂𝕃𝕄ℕ𝕆ℙℚℝ𝕊𝕋𝕌𝕍𝕎𝕏𝕐ℤ𝕒𝕓𝕔𝕕𝕖𝕗𝕘𝕙𝕚𝕛𝕜𝕝𝕞𝕟𝕠𝕡𝕢𝕣𝕤𝕥𝕦𝕧𝕨𝕩𝕪𝕫𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡",
+        'script': "𝒜𝐵𝒞𝒟𝐸𝐹𝒢𝐻𝐼𝒥𝒦𝐿𝑀𝒩𝒪𝒫𝒬𝑅𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵𝒶𝒷𝒸𝒹𝑒𝒻𝑔𝒽𝒾𝒿𝓀𝓁𝓂𝓃𝑜𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏0123456789",
+        'superscript': "ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖᵠʳˢᵗᵘᵛʷˣʸᶻᴬᴮᶜᴰᴱᶠᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᵠᴿˢᵀᵁⱽᵂˣʸᶻ⁰¹²³⁴⁵⁶⁷⁸⁹",
+        'subscript': "ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵧ𝓏ₐ𝓫𝒸𝒹ₑ𝒻𝓰ₕᵢⱼₖₗₘₙₒₚ𝓆ᵣₛₜᵤᵥ𝓌ₓᵧ𝓏₀₁₂₃₄₅₆₇₈₉",
+        'outline': "𝕬𝕭𝕮𝕯𝕰𝕱𝕲𝕳𝕴𝕵𝕶𝕷𝕸𝕹𝕺𝕻𝕼𝕽𝕾𝕿𝖀𝖁𝖂𝖃𝖄𝖅𝖆𝖇𝖈𝖉𝖊𝖋𝖌𝖍𝖎𝖏𝖐𝖑𝖒𝖓𝖔𝖕𝖖𝖗𝖘𝖙𝖚𝖛𝖜𝖝𝖞𝖟0123456789",
+        'heavy': "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵",
+        'wide': "ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ０１２３４５６７８９",
+        'narrow': "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀꜱᴛᴜᴠᴡxʏᴢᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀꜱᴛᴜᴠᴡxʏᴢ0123456789",
+        'upside_down': "ɐqɔpǝɟƃɥıɾʞlɯuodbɹsʇnʌʍxʎz∀qƆpƎℲפHIſʞ˥WNOԀQɹS┴∩ΛMX⅄Z0ƖᄅƐㄣϛ9ㄥ86",
+        'mirror': "ɐqɔpǝɟƃɥıɾʞlɯuodbɹsʇnʌʍxʎz∀qƆpƎℲפHIſʞ˥WNOԀQɹS┴∩ΛMX⅄Z0ƖᄅƐㄣϛ9ㄥ86",
+        'strikethrough': "a̶b̶c̶d̶e̶f̶g̶h̶i̶j̶k̶l̶m̶n̶o̶p̶q̶r̶s̶t̶u̶v̶w̶x̶y̶z̶A̶B̶C̶D̶E̶F̶G̶H̶I̶J̶K̶L̶M̶N̶O̶P̶Q̶R̶S̶T̶U̶V̶W̶X̶Y̶Z̶0̶1̶2̶3̶4̶5̶6̶7̶8̶9̶",
+        'underline': "a̲b̲c̲d̲e̲f̲g̲h̲i̲j̲k̲l̲m̲n̲o̲p̲q̲r̲s̲t̲u̲v̲w̲x̲y̲z̲A̲B̲C̲D̲E̲F̲G̲H̲I̲J̲K̲L̲M̲N̲O̲P̲Q̲R̲S̲T̲U̲V̲W̲X̲Y̲Z̲0̲1̲2̲3̲4̲5̲6̲7̲8̲9̲",
+        'overline': "a̅b̅c̅d̅e̅f̅g̅h̅i̅j̅k̅l̅m̅n̅o̅p̅q̅r̅s̅t̅u̅v̅w̅x̅y̅z̅A̅B̅C̅D̅E̅F̅G̅H̅I̅J̅K̅L̅M̅N̅O̅P̅Q̅R̅S̅T̅U̅V̅W̅X̅Y̅Z̅0̅1̅2̅3̅4̅5̅6̅7̅8̅9̅",
+        'double_underline': "a̳b̳c̳d̳e̳f̳g̳h̳i̳j̳k̳l̳m̳n̳o̳p̳q̳r̳s̳t̳u̳v̳w̳x̳y̳z̳A̳B̳C̳D̳E̳F̳G̳H̳I̳J̳K̳L̳M̳N̳O̳P̳Q̳R̳S̳T̳U̳V̳W̳X̳Y̳Z̳0̳1̳2̳3̳4̳5̳6̳7̳8̳9̳",
+        'squiggle': "a̰b̰c̰d̰ḛf̰g̰h̰ḭj̰k̰l̰m̰n̰o̰p̰q̰r̰s̰t̰ṵv̰w̰x̰y̰z̰A̰B̰C̰D̰ḚF̰G̰H̰ḬJ̰K̰L̰M̰N̰O̰P̰Q̰R̰S̰T̰ṴV̰W̰X̰Y̰Z̰0̰1̰2̰3̰4̰5̰6̰7̰8̰9̰",
+        'wave': "ãb̃c̃d̃ẽf̃g̃h̃ĩj̃k̃l̃m̃ñõp̃q̃r̃s̃t̃ũṽw̃x̃ỹz̃ÃB̃C̃D̃ẼF̃G̃H̃ĨJ̃K̃L̃M̃ÑÕP̃Q̃R̃S̃T̃ŨṼW̃X̃ỸZ̃0̃1̃2̃3̃4̃5̃6̃7̃8̃9̃",
+        'slash': "a̷b̷c̷d̷e̷f̷g̷h̷i̷j̷k̷l̷m̷n̷o̷p̷q̷r̷s̷t̷u̷v̷w̷x̷y̷z̷A̷B̷C̷D̷E̷F̷G̷H̷I̷J̷K̷L̷M̷N̷O̷P̷Q̷R̷S̷T̷U̷V̷W̷X̷Y̷Z̷0̷1̷2̷3̷4̷5̷6̷7̷8̷9̷",
+        'x_through': "a̸b̸c̸d̸e̸f̸g̸h̸i̸j̸k̸l̸m̸n̸o̸p̸q̸r̸s̸t̸u̸v̸w̸x̸y̸z̸A̸B̸C̸D̸E̸F̸G̸H̸I̸J̸K̸L̸M̸N̸O̸P̸Q̸R̸S̸T̸U̸V̷W̷X̷Y̷Z̷0̷1̷2̷3̷4̷5̷6̷7̷8̷9̷",
+        'asterisk': "a͙b͙c͙d͙e͙f͙g͙h͙i͙j͙k͙l͙m͙n͙o͙p͙q͙r͙s͙t͙u͙v͙w͙x͙y͙z͙A͙B͙C͙D͙E͙F͙G͙H͙I͙J͙K͙L͙M͙N͙O͙P͙Q͙R͙S͙T͙U͙V͙W͙X͙Y͙Z͙0͙1͙2͙3͙4͙5͙6͙7͙8͙9͙",
+        'dot_above': "ȧḃċḋėḟġḣi̇j̇k̇l̇ṁṅȯṗq̇ṙṡṫu̇v̇ẇẋẏżȦḂĊḊĖḞĠḢİJ̇K̇L̇ṀṄȮṖQ̇ṘṠṪU̇V̇ẆẊẎŻ0̇1̇2̇3̇4̇5̇6̇7̇8̇9̇",
+        'dot_below': "ạḅc̣ḍẹf̣g̣ḥịj̣ḳḷṃṇọp̣q̣ṛṣṭụṿẉx̣ỵẓẠḄC̣ḌẸF̣G̣ḤỊJ̣ḲḶṂṆỌP̣Q̣ṚṢṬỤṾẈX̣ỴẒ0̣1̣2̣3̣4̣5̣6̣7̣8̣9̣",
+        'ring_above': "åb̊c̊d̊e̊f̊g̊h̊i̊j̊k̊l̊m̊n̊o̊p̊q̊r̊s̊t̊ův̊ẘx̊ẙz̊ÅB̊C̊D̊E̊F̊G̊H̊I̊J̊K̊L̊M̊N̊O̊P̊Q̊R̊S̊T̊ŮV̊W̊X̊Y̊Z̊0̊1̊2̊3̊4̊5̊6̊7̊8̊9̊",
+        'hook_above': "ảb̉c̉d̉ẻf̉g̉h̉ỉj̉k̉l̉m̉n̉ỏp̉q̉r̉s̉t̉ủv̉w̉x̉ỷz̉ẢB̉C̉D̉ẺF̉G̉H̉ỈJ̉K̉L̉M̉N̉ỎP̉Q̉R̉S̉T̉ỦV̉W̉X̉ỶZ̉0̉1̉2̉3̉4̉5̉6̉7̉8̉9̉",
+        'horn': "a̛b̛c̛d̛e̛f̛g̛h̛i̛j̛k̛l̛m̛n̛ơp̛q̛r̛s̛t̛ưv̛w̛x̛y̛z̛A̛B̛C̛D̛E̛F̛G̛H̛I̛J̛K̛L̛M̛N̛ƠP̛Q̛R̛S̛T̛ƯV̛W̛X̛Y̛Z̛0̛1̛2̛3̛4̛5̛6̛7̛8̛9̛",
+        'cedilla': "a̧b̧çḑȩf̧ģḩi̧j̧ķļm̧ņo̧p̧q̧ŗşţu̧v̧w̧x̧y̧z̧A̧B̧ÇḐȨF̧ĢḨI̧J̧ĶĻM̧ŅO̧P̧Q̧ŖŞŢU̧V̧W̧X̧Y̧Z̧0̧1̧2̧3̧4̧5̧6̧7̧8̧9̧",
+        'ogonek': "ąb̨c̨d̨ęf̨g̨h̨įj̨k̨l̨m̨n̨ǫp̨q̨r̨s̨t̨ųv̨w̨x̨y̨z̨ĄB̨C̨D̨ĘF̨G̨H̨ĮJ̨K̨L̨M̨N̨ǪP̨Q̨R̨S̨T̨ŲV̨W̨X̨Y̨Z̨0̨1̨2̨3̨4̨5̨6̨7̨8̨9̨",
+        'caron': "ǎb̌čďěf̌ǧȟǐǰǩľm̌ňǒp̌q̌řšťǔv̌w̌x̌y̌žǍB̌ČĎĚF̌ǦȞǏJ̌ǨĽM̌ŇǑP̌Q̌ŘŠŤǓV̌W̌X̌Y̌Ž0̌1̌2̌3̌4̌5̌6̌7̌8̌9̌",
+        'breve': "ăb̆c̆d̆ĕf̆ğh̆ĭj̆k̆l̆m̆n̆ŏp̆q̆r̆s̆t̆ŭv̆w̆x̆y̆z̆ĂB̆C̆D̆ĔF̆ĞH̆ĬJ̆K̆L̆M̆N̆ŎP̆Q̆R̆S̆T̆ŬV̆W̆X̆Y̆Z̆0̆1̆2̆3̆4̆5̆6̆7̆8̆9̆",
+        'macron': "āb̄c̄d̄ēf̄ḡh̄īj̄k̄l̄m̄n̄ōp̄q̄r̄s̄t̄ūv̄w̄x̄ȳz̄ĀB̄C̄D̄ĒF̄ḠH̄ĪJ̄K̄L̄M̄N̄ŌP̄Q̄R̄S̄T̄ŪV̄W̄X̄ȲZ̄0̄1̄2̄3̄4̄5̄6̄7̄8̄9̄",
+        'tilde': "ãb̃c̃d̃ẽf̃g̃h̃ĩj̃k̃l̃m̃ñõp̃q̃r̃s̃t̃ũṽw̃x̃ỹz̃ÃB̃C̃D̃ẼF̃G̃H̃ĨJ̃K̃L̃M̃ÑÕP̃Q̃R̃S̃T̃ŨṼW̃X̃ỸZ̃0̃1̃2̃3̃4̃5̃6̃7̃8̃9̃",
+        'diaeresis': "äb̈c̈d̈ëf̈g̈ḧïj̈k̈l̈m̈n̈öp̈q̈r̈s̈ẗüv̈ẅẍÿz̈ÄB̈C̈D̈ËF̈G̈ḦÏJ̈K̈L̈M̈N̈ÖP̈Q̈R̈S̈T̈ÜV̈ẄẌŸZ̈0̈1̈2̈3̈4̈5̈6̈7̈8̈9̈",
+        'acute': "áb́ćd́éf́ǵh́íj́ḱĺḿńóṕq́ŕśt́úv́ẃx́ýźÁB́ĆD́ÉF́ǴH́ÍJ́ḰĹḾŃÓṔQ́ŔŚT́ÚV́ẂX́ÝŹ0́1́2́3́4́5́6́7́8́9́",
+        'grave': "àb̀c̀d̀èf̀g̀h̀ìj̀k̀l̀m̀ǹòp̀q̀r̀s̀t̀ùv̀ẁx̀ỳz̀ÀB̀C̀D̀ÈF̀G̀H̀ÌJ̀K̀L̀M̀ǸÒP̀Q̀R̀S̀T̀ÙV̀ẀX̀ỲZ̀0̀1̀2̀3̀4̀5̀6̀7̀8̀9̀",
+        'circumflex': "âb̂ĉd̂êf̂ĝĥîĵk̂l̂m̂n̂ôp̂q̂r̂ŝt̂ûv̂ŵx̂ŷẑÂB̂ĈD̂ÊF̂ĜĤÎĴK̂L̂M̂N̂ÔP̂Q̂R̂ŜT̂ÛV̂ŴX̂ŶẐ0̂1̂2̂3̂4̂5̂6̂7̂8̂9̂",
     }
     
     # Small Caps Font for bot messages
@@ -186,10 +210,145 @@ class FontStyles:
     # 1000+ Decorative Styles
     DECORATIVE_STYLES = [
         # Basic Decorations
-        "꧁{}꧂", "⫷{}⫸",
+        "꧁{}꧂", "⫷{}⫸", "『{}』", "༺{}༻", "♛{}♛", "⚡{}⚡", "◥{}◤", "✦{}✦",
+        "❖{}❖", "⌖{}⌖", "亗{}亗", "卍{}卍", "【{}】", "〖{}〗", "〈{}〉", "«{}»",
+        "‹{}›", "⁅{}⁆", "⌈{}⌉", "⌊{}⌋", "⎰{}⎱", "⎡{}⎤", "⎣{}⎦", "⎡{}⎦",
+        "⎣{}⎤", "⎡{}⎥", "⎢{}⎦", "⎣{}⎥", "⎢{}⎤", "『☆{}☆』", "『★{}★』",
+        "『☯{}☯』", "『☬{}☬』", "『☠{}☠』", "『☣{}☣』", "『⚜{}⚜』", "『✠{}✠』",
+        "『✧{}✧』", "『✦{}✦』", "『❖{}❖』", "『✪{}✪』", "『✰{}✰』", "『❂{}❂』",
+        "『✵{}✵』", "『✯{}✯』", "╔═══✦{}✦═══╗", "┏━━━❖{}❖━━━┓", "【†{}†】",
+        "『〖{}〗』", "▁▂▃▄▅▆▇█{}█▇▆▅▄▃▂▁", "░▒▓█{}█▓▒░", "█▀▀▀▀▀▀▀▀▀▀{}▀▀▀▀▀▀▀▀▀▀█",
+        "╔═╗{}╔═╗", "█▶{}◀█", "◄{}►", "«{}»", "≪{}≫", "⋘{}⋙", "❰{}❱",
+        "〔{}〕", "〖{}〗", "〈{}〉", "««{}»»", "≪≪{}≫≫", "▄︻デ══━一{}一══デ︻▄",
+        "╾━╤デ╦︻{}︻╦デ╤━╼", "︻╦̵̵͇̿̿̿̿╤──{}──╤̵̵͇̿̿̿̿╦︻", "【﻿{}】", "『⇝{}⇜』",
+        "|!¤*'~``~'*¤!|{}|!¤*'~``~'*¤!|", "╔═══━━━──•{}•──━━━═══╗",
+        "╔═════≪•{}•≫═════╗", "╔═╗•{}•╔═╗", "╔╗•{}•╔╗", "╔╗{}╔╗",
+        "╚╗{}╔╝", "╚═╝{}╚═╝", "╚╝{}╚╝", "◢{}◣", "◣{}◢", "◤{}◥",
+        "◥{}◤", "◈{}◈", "◇{}◇", "◆{}◆", "◉{}◉", "◎{}◎", "⊙{}⊙",
+        "⦿{}⦿", "⦾{}⦾", "⦿{}⦿", "⧈{}⧈", "⧉{}⧉", "⧊{}⧊", "⧋{}⧋",
+        "⧌{}⧌", "⧍{}⧍", "⧎{}⧎", "⧏{}⧏", "⧐{}⧐", "⧑{}⧑", "⧒{}⧒",
+        "⧓{}⧓", "⧔{}⧔", "⧕{}⧕", "⧖{}⧖", "⧗{}⧗", "⧘{}⧘", "⧙{}⧙",
+        "⧚{}⧚", "⧛{}⧛", "⧜{}⧜", "⧝{}⧝", "⧞{}⧞", "⧟{}⧟", "⧠{}⧠",
+        "⧡{}⧡", "⧢{}⧢", "⧣{}⧣", "⧤{}⧤", "⧥{}⧥", "⧦{}⧦", "⧧{}⧧",
+        "⧨{}⧨", "⧩{}⧩", "⧪{}⧪", "⧫{}⧫", "⧬{}⧬", "⧭{}⧭", "⧮{}⧮",
+        "⧯{}⧯", "⧰{}⧰", "⧱{}⧱", "⧲{}⧲", "⧳{}⧳", "⧴{}⧴", "⧵{}⧵",
+        "⧶{}⧶", "⧷{}⧷", "⧸{}⧸", "⧹{}⧹", "⧺{}⧺", "⧻{}⧻", "⧼{}⧼",
+        "⧽{}⧽", "⧾{}⧾", "⧿{}⧿", "⨀{}⨀", "⨁{}⨁", "⨂{}⨂", "⨃{}⨃",
+        "⨄{}⨄", "⨅{}⨅", "⨆{}⨆", "⨇{}⨇", "⨈{}⨈", "⨉{}⨉", "⨊{}⨊",
+        "⨋{}⨋", "⨌{}⨌", "⨍{}⨍", "⨎{}⨎", "⨏{}⨏", "⨐{}⨐", "⨑{}⨑",
+        "⨒{}⨒", "⨓{}⨓", "⨔{}⨔", "⨕{}⨕", "⨖{}⨖", "⨗{}⨗", "⨘{}⨘",
+        "⨙{}⨙", "⨚{}⨚", "⨛{}⨛", "⨜{}⨜", "⨝{}⨝", "⨞{}⨞", "⨟{}⨟",
+        "⨠{}⨠", "⨡{}⨡", "⨢{}⨢", "⨣{}⨣", "⨤{}⨤", "⨥{}⨥", "⨦{}⨦",
+        "⨧{}⨧", "⨨{}⨨", "⨩{}⨩", "⨪{}⨪", "⨫{}⨫", "⨬{}⨬", "⨭{}⨭",
+        "⨮{}⨮", "⨯{}⨯", "⨰{}⨰", "⨱{}⨱", "⨲{}⨲", "⨳{}⨳", "⨴{}⨴",
+        "⨵{}⨵", "⨶{}⨶", "⨷{}⨷", "⨸{}⨸", "⨹{}⨹", "⨺{}⨺", "⨻{}⨻",
+        "⨼{}⨼", "⨽{}⨽", "⨾{}⨾", "⨿{}⨿", "⩀{}⩀", "⩁{}⩁", "⩂{}⩂",
+        "⩃{}⩃", "⩄{}⩄", "⩅{}⩅", "⩆{}⩆", "⩇{}⩇", "⩈{}⩈", "⩉{}⩉",
+        "⩊{}⩊", "⩋{}⩋", "⩌{}⩌", "⩍{}⩍", "⩎{}⩎", "⩏{}⩏", "⩐{}⩐",
+        "⩑{}⩑", "⩒{}⩒", "⩓{}⩓", "⩔{}⩔", "⩕{}⩕", "⩖{}⩖", "⩗{}⩗",
+        "⩘{}⩘", "⩙{}⩙", "⩚{}⩚", "⩛{}⩛", "⩜{}⩜", "⩝{}⩝", "⩞{}⩞",
+        "⩟{}⩟", "⩠{}⩠", "⩡{}⩡", "⩢{}⩢", "⩣{}⩣", "⩤{}⩤", "⩥{}⩥",
+        "⩦{}⩦", "⩧{}⩧", "⩨{}⩨", "⩩{}⩩", "⩪{}⩪", "⩫{}⩫", "⩬{}⩬",
+        "⩭{}⩭", "⩮{}⩮", "⩯{}⩯", "⩰{}⩰", "⩱{}⩱", "⩲{}⩲", "⩳{}⩳",
+        "⩴{}⩴", "⩵{}⩵", "⩶{}⩶", "⩷{}⩷", "⩸{}⩸", "⩹{}⩹", "⩺{}⩺",
+        "⩻{}⩻", "⩼{}⩼", "⩽{}⩽", "⩾{}⩾", "⩿{}⩿", "⪀{}⪀", "⪁{}⪁",
+        "⪂{}⪂", "⪃{}⪃", "⪄{}⪄", "⪅{}⪅", "⪆{}⪆", "⪇{}⪇", "⪈{}⪈",
+        "⪉{}⪉", "⪊{}⪊", "⪋{}⪋", "⪌{}⪌", "⪍{}⪍", "⪎{}⪎", "⪏{}⪏",
+        "⪐{}⪐", "⪑{}⪑", "⪒{}⪒", "⪓{}⪓", "⪔{}⪔", "⪕{}⪕", "⪖{}⪖",
+        "⪗{}⪗", "⪘{}⪘", "⪙{}⪙", "⪚{}⪚", "⪛{}⪛", "⪜{}⪜", "⪝{}⪝",
+        "⪞{}⪞", "⪟{}⪟", "⪠{}⪠", "⪡{}⪡", "⪢{}⪢", "⪣{}⪣", "⪤{}⪤",
+        "⪥{}⪥", "⪦{}⪦", "⪧{}⪧", "⪨{}⪨", "⪩{}⪩", "⪪{}⪪", "⪫{}⪫",
+        "⪬{}⪬", "⪭{}⪭", "⪮{}⪮", "⪯{}⪯", "⪰{}⪰", "⪱{}⪱", "⪲{}⪲",
+        "⪳{}⪳", "⪴{}⪴", "⪵{}⪵", "⪶{}⪶", "⪷{}⪷", "⪸{}⪸", "⪹{}⪹",
+        "⪺{}⪺", "⪻{}⪻", "⪼{}⪼", "⪽{}⪽", "⪾{}⪾", "⪿{}⪿", "⫀{}⫀",
+        "⫁{}⫁", "⫂{}⫂", "⫃{}⫃", "⫄{}⫄", "⫅{}⫅", "⫆{}⫆", "⫇{}⫇",
+        "⫈{}⫈", "⫉{}⫉", "⫊{}⫊", "⫋{}⫋", "⫌{}⫌", "⫍{}⫍", "⫎{}⫎",
+        "⫏{}⫏", "⫐{}⫐", "⫑{}⫑", "⫒{}⫒", "⫓{}⫓", "⫔{}⫔", "⫕{}⫕",
+        "⫖{}⫖", "⫗{}⫗", "⫘{}⫘", "⫙{}⫙", "⫚{}⫚", "⫛{}⫛", "⫝̸{}⫝̸",
+        "⫝{}⫝", "⫞{}⫞", "⫟{}⫟", "⫠{}⫠", "⫡{}⫡", "⫢{}⫢", "⫣{}⫣",
+        "⫤{}⫤", "⫥{}⫥", "⫦{}⫦", "⫧{}⫧", "⫨{}⫨", "⫩{}⫩", "⫪{}⫪",
+        "⫫{}⫫", "⫬{}⫬", "⫭{}⫭", "⫮{}⫮", "⫯{}⫯", "⫰{}⫰", "⫱{}⫱",
+        "⫲{}⫲", "⫳{}⫳", "⫴{}⫴", "⫵{}⫵", "⫶{}⫶", "⫷{}⫷", "⫸{}⫸",
+        "⫹{}⫹", "⫺{}⫺", "⫻{}⫻", "⫼{}⫼", "⫽{}⫽", "⫾{}⫾", "⫿{}⫿",
         
         # Emoji Styles (200+)
-        "😈{}😈", "👑{}👑",
+        "😈{}😈", "👑{}👑", "🔥{}🔥", "⚡{}⚡", "✨{}✨", "🎯{}🎯", "🎭{}🎭",
+        "🎮{}🎮", "💀{}💀", "🤖{}🤖", "👻{}👻", "👽{}👽", "🤴{}🤴", "👸{}👸",
+        "🦸{}🦸", "🦹{}🦹", "🧙{}🧙", "🧛{}🧛", "🧟{}🧟", "🧞{}🧞", "🧚{}🧚",
+        "🦄{}🦄", "🐉{}🐉", "🐲{}🐲", "🦁{}🦁", "🐯{}🐯", "🐺{}🐺", "🦊{}🦊",
+        "🐍{}🐍", "🦅{}🦅", "🦇{}🦇", "🕷️{}🕷️", "🕸️{}🕸️", "💎{}💎", "⚔️{}⚔️",
+        "🛡️{}🛡️", "🏹{}🏹", "🔫{}🔫", "🗡️{}🗡️", "🔱{}🔱", "⚜️{}⚜️", "🦠{}🦠",
+        "♡{}♡", "♥{}♥", "❥{}❥", "ღ{}ღ", "❦{}❦", "❧{}❧", "☯{}☯", "☮{}☮",
+        "☪{}☪", "✡{}✡", "⚛{}⚛", "🕉{}🕉", "✝{}✝", "✞{}✞", "✟{}✟", "☦{}☦",
+        "🕎{}🕎", "🔯{}🔯", "🔼{}🔼", "🔽{}🔽", "⏫{}⏫", "⏬{}⏬", "⏭️{}⏭️",
+        "⏮️{}⏮️", "⏸️{}⏸️", "⏹️{}⏹️", "⏺️{}⏺️", "⏏️{}⏏️", "🎦{}🎦", "🔅{}🔅",
+        "🔆{}🔆", "📛{}📛", "📜{}📜", "📰{}📰", "🏴{}🏴", "🏳️{}🏳️", "🏴‍☠️{}🏴‍☠️",
+        "🏳️‍🌈{}🏳️‍🌈", "🇺🇳{}🇺🇳", "🇺🇸{}🇺🇸", "🇬🇧{}🇬🇧", "🇩🇪{}🇩🇪", "🇫🇷{}🇫🇷",
+        "🇮🇹{}🇮🇹", "🇪🇸{}🇪🇸", "🇷🇺{}🇷🇺", "🇨🇳{}🇨🇳", "🇯🇵{}🇯🇵", "🇰🇷{}🇰🇷",
+        "🇮🇳{}🇮🇳", "🇧🇩{}🇧🇩", "🇵🇰{}🇵🇰", "🇸🇦{}🇸🇦", "🇦🇪{}🇦🇪", "🇶🇦{}🇶🇦",
+        "🎮{}🎮", "🕹️{}🕹️", "👾{}👾", "🖥️{}🖥️", "💻{}💻", "📱{}📱", "🎲{}🎲",
+        "🎰{}🎰", "🎯{}🎯", "🎳{}🎳", "🏓{}🏓", "🏸{}🏸", "🥊{}🥊", "🥋{}🥋",
+        "⛸️{}⛸️", "🎿{}🎿", "⛷️{}⛷️", "🏂{}🏂", "🏄{}🏄", "🏊{}🏊", "🤽{}🤽",
+        "🏋️{}🏋️", "🤸{}🤸", "🤾{}🤾", "🤺{}🤺", "🥌{}🥌", "🎖️{}🎖️", "🏆{}🏆",
+        "🏅{}🏅", "🥇{}🥇", "🥈{}🥈", "🥉{}🥉", "⚽{}⚽", "🏀{}🏀", "🏈{}🏈",
+        "⚾{}⚾", "🎾{}🎾", "🏐{}🏐", "🏉{}🏉", "🎱{}🎱", "🏏{}🏏", "🏑{}🏑",
+        "🏒{}🏒", "🏓{}🏓", "🏸{}🏸", "🥅{}🥅", "🥊{}🥊", "🥋{}🥋", "🥏{}🥏",
+        "🥍{}🥍", "🪃{}🪃", "🪁{}🪁", "🪂{}🪂", "🤿{}🤿", "🥽{}🥽", "🥼{}🥼",
+        "🦺{}🦺", "👑{}👑", "👒{}👒", "🎩{}🎩", "🎓{}🎓", "🧢{}🧢", "⛑️{}⛑️",
+        "📿{}📿", "💄{}💄", "💍{}💍", "💎{}💎", "🔪{}🔪", "💣{}💣", "🧨{}🧨",
+        "📯{}📯", "🗜️{}🗜️", "⚙️{}⚙️", "🔩{}🔩", "⚗️{}⚗️", "🔬{}🔬", "🔭{}🔭",
+        "📡{}📡", "💉{}💉", "💊{}💊", "🧪{}🧪", "🧫{}🧫", "🧬{}🧬", "🔋{}🔋",
+        "🔌{}🔌", "💡{}💡", "🔦{}🔦", "🕯️{}🕯️", "🧯{}🧯", "🛢️{}🛢️", "⚱️{}⚱️",
+        "🗿{}🗿", "🪨{}🪨", "🪵{}🪵", "🌱{}🌱", "🌲{}🌲", "🌳{}🌳", "🌴{}🌴",
+        "🌵{}🌵", "🌾{}🌾", "🌿{}🌿", "🍀{}🍀", "🍁{}🍁", "🍂{}🍂", "🍃{}🍃",
+        "🍄{}🍄", "🌰{}🌰", "🦴{}🦴", "🦷{}🦷", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴",
+        "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴",
+        "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴",
+        "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴", "🦴{}🦴",
+    ]
+    
+    # 500+ Art Styles
+    ART_STYLES = [
+        "░▒▓█{}█▓▒░", "█▀▀▀▀▀▀▀▀▀▀{}▀▀▀▀▀▀▀▀▀▀█", "╔═╗{}╔═╗", "█▶{}◀█",
+        "◄{}►", "«{}»", "≪{}≫", "⋘{}⋙", "❰{}❱", "〔{}〕", "【{}】",
+        "〖{}〗", "〈{}〉", "««{}»»", "≪≪{}≫≫", "▁▂▃▄▅▆▇█{}█▇▆▅▄▃▂▁",
+        "░▒▓█▓▒░{}░▒▓█▓▒░", "▒▓█▓▒░{}░▒▓█▓▒", "▓█▓▒░{}░▒▓█▓", "█▓▒░{}░▒▓█",
+        "▓▒░{}░▒▓", "▒░{}░▒", "░{}░", "▒{}▒", "▓{}▓", "█{}█",
+        "▀▄▀▄▀▄{}▄▀▄▀▄▀", "▄▀▄▀▄▀{}▀▀▀▄▀▄", "▀█▀█▀█{}█▀█▀█▀",
+        "█▀█▀█▀{}▀█▀█▀█", "▓▒▓▒▓▒{}▒▓▒▓▒▓", "▒▓▒▓▒▓{}▓▒▓▒▓▒",
+        "░▓░▓░▓{}▓░▓░▓░", "▓░▓░▓░{}░▓░▓░▓", "▒░▒░▒░{}░▒░▒░▒",
+        "░▒░▒░▒{}▒░▒░▒░", "█░█░█░{}░█░█░█", "░█░█░█{}█░█░█░",
+        "▀░▀░▀░{}░▀░▀░▀", "░▀░▀░▀{}▀░▀░▀░", "■□■□■{}□■□■□",
+        "□■□■□{}■□■□■", "●○●○●{}○●○●○", "○●○●○{}●○●○●",
+        "▲△▲△▲{}△▲△▲△", "△▲△▲△{}▲△▲△▲", "▼▽▼▽▼{}▽▼▽▼▽",
+        "▽▼▽▼▽{}▼▽▼▽▼", "◆◇◆◇◆{}◇◆◇◆◇", "◇◆◇◆◇{}◆◇◆◇◆",
+        "★☆★☆★{}☆★☆★☆", "☆★☆★☆{}★☆★☆★", "♠♡♠♡♠{}♡♠♡♠♡",
+        "♡♠♡♠♡{}♠♡♡♠♡", "♣♦♣♦♣{}♦♣♦♣♦", "♦♣♦♣♦{}♣♦♣♦♣",
+        "⚫⚪⚫⚪⚫{}⚪⚫⚪⚫⚪", "⚪⚫⚪⚫⚪{}⚫⚪⚫⚪⚫",
+        "⬛⬜⬛⬜⬛{}⬜⬛⬜⬛⬜", "⬜⬛⬜⬛⬜{}⬛⬜⬛⬜⬛",
+        "▪️▫️▪️▫️▪️{}▫️▪️▫️▪️▫️", "▫️▪️▫️▪️▫️{}▪️▫️▪️▫️▪️",
+        "◼️◻️◼️◻️◼️{}◻️◼️◻️◼️◻️", "◻️◼️◻️◼️◻️{}◼️◻️◼️◻️◼️",
+        "◾◽◾◽◾{}◽◾◽◾◽", "◽◾◽◾◽{}◾◽◾◽◾",
+        "🔳🔲🔳🔲🔳{}🔲🔳🔲🔳🔲", "🔲🔳🔲🔳🔲{}🔳🔲🔳🔲🔳",
+        "🟥🟧🟨🟩🟦{}🟪🟫⬛⬜", "🟧🟨🟩🟦🟪{}🟫⬛⬜🟥",
+        "🟨🟩🟦🟪🟫{}⬛⬜🟥🟧", "🟩🟦🟪🟫⬛{}⬜🟥🟧🟨",
+        "🟦🟪🟫⬛⬜{}🟥🟧🟨🟩", "🟪🟫⬛⬜🟥{}🟧🟨🟩🟦",
+        "🟫⬛⬜🟥🟧{}🟨🟩🟦🟪", "⬛⬜🟥🟧🟨{}🟩🟦🟪🟫",
+        "⬜🟥🟧🟨🟩{}🟦🟪🟫⬛", "🟥🟧🟨🟩🟦{}🟪🟫⬛⬜",
+        "🔴🟠🟡🟢🔵{}🟣🟤⚫⚪", "🟠🟡🟢🔵🟣{}🟤⚫⚪🔴",
+        "🟡🟢🔵🟣🟤{}⚫⚪🔴🟠", "🟢🔵🟣🟤⚫{}⚪🔴🟠🟡",
+        "🔵🟣🟤⚫⚪{}🔴🟠🟡🟢", "🟣🟤⚫⚪🔴{}🟠🟡🟢🔵",
+        "🟤⚫⚪🔴🟠{}🟡🟢🔵🟣", "⚫⚪🔴🟠🟡{}🟢🔵🟣🟤",
+        "⚪🔴🟠🟡🟢{}🔵🟣🟤⚫", "🔴🟠🟡🟢🔵{}🟣🟤⚫⚪",
+        "⭕❌⭕❌⭕{}❌⭕❌⭕❌", "❌⭕❌⭕❌{}⭕❌⭕❌⭕",
+        "✅❎✅❎✅{}❎✅❎✅❎", "❎✅❎✅❎{}✅❎✅❎✅",
+        "☑️🔘☑️🔘☑️{}🔘☑️🔘☑️🔘", "🔘☑️🔘☑️🔘{}☑️🔘☑️🔘☑️",
+        "⚪🔴⚪🔴⚪{}🔴⚪🔴⚪🔴", "🔴⚪🔴⚪🔴{}⚪🔴⚪🔴⚪",
+        "🔵🟢🔵🟢🔵{}🟢🔵🟢🔵🟢", "🟢🔵🟢🔵🟢{}🔵🟢🔵🟢🔵",
+        "🟡🟠🟡🟠🟡{}🟠🟡🟠🟡🟠", "🟠🟡🟠🟡🟠{}🟡🟠🟡🟠🟡",
+        "🟣🟤🟣🟤🟣{}🟤🟣🟤🟣🟤", "🟤🟣🟤🟣🟤{}🟣🟤🟣🟤🟣",
+        "⚫⚪⚫⚪⚫{}⚪⚫⚪⚫⚪", "⚪⚫⚪⚫⚪{}⚫⚪⚫⚪⚫",
+        "⬛⬜⬛⬜⬛{}⬜⬛⬜⬛⬜", "⬜⬛⬜⬛⬜{}⬛⬜⬛⬜⬛",
     ]
     
     # Mixed Styles (Font + Decoration)
@@ -210,6 +369,20 @@ class FontStyles:
             # Special combinations
             special_combos = [
                 ('bold', '꧁{}꧂'), ('italic', '『{}』'), ('monospace', '♛{}♛'),
+                ('bubble', '⚡{}⚡'), ('gothic', '【{}】'), ('double_struck', '〖{}〗'),
+                ('script', '❖{}❖'), ('fraktur', '▄︻デ══━一{}一══デ︻▄'),
+                ('blackboard', '╔═══✦{}✦═══╗'), ('small_caps', '┏━━━❖{}❖━━━┓'),
+                ('superscript', '😈{}😈'), ('subscript', '👑{}👑'), ('outline', '🔥{}🔥'),
+                ('heavy', '⚡{}⚡'), ('cursive', '✨{}✨'), ('upside_down', '🎯{}🎯'),
+                ('wide', '『☆{}☆』'), ('narrow', '『★{}★』'), ('strikethrough', '『☯{}☯』'),
+                ('underline', '『☬{}☬』'), ('overline', '『☠{}☠』'), ('double_underline', '『☣{}☣』'),
+                ('squiggle', '『⚜{}⚜』'), ('wave', '『✠{}✠』'), ('slash', '『✧{}✧』'),
+                ('x_through', '『✦{}✦』'), ('asterisk', '『❖{}❖』'), ('dot_above', '『✪{}✪』'),
+                ('dot_below', '『✰{}✰』'), ('ring_above', '『❂{}❂』'), ('hook_above', '『✵{}✵』'),
+                ('horn', '『✯{}✯』'), ('cedilla', '╔═══✦{}✦═══╗'), ('ogonek', '┏━━━❖{}❖━━━┓'),
+                ('caron', '【†{}†】'), ('breve', '『〖{}〗』'), ('macron', '▁▂▃▄▅▆▇█{}█▇▆▅▄▃▂▁'),
+                ('tilde', '░▒▓█{}█▓▒░'), ('diaeresis', '█▀▀▀▀▀▀▀▀▀▀{}▀▀▀▀▀▀▀▀▀▀█'),
+                ('acute', '╔═╗{}╔═╗'), ('grave', '█▶{}◀█'), ('circumflex', '◄{}►'),
             ]
             
             cls.MIXED_STYLES = mixed + special_combos
@@ -432,8 +605,8 @@ class BotHandlers:
         category_map = {
             'cat_decorative': ('decorative', FontStyles.DECORATIVE_STYLES),
             'cat_fonts': ('fonts', list(FontStyles.FONTS.keys())),
-            'cat_art': ('art', FontStyles.DECORATIVE_STYLES[:20]),  # Using decorative as art for now
-            'cat_mixed': ('mixed', FontStyles.MIXED_STYLES[:20])
+            'cat_art': ('art', FontStyles.ART_STYLES),
+            'cat_mixed': ('mixed', FontStyles.MIXED_STYLES)
         }
         
         if data not in category_map:
@@ -609,7 +782,7 @@ class BotHandlers:
                 font = random.choice(list(FontStyles.FONTS.keys()))
                 styled_text = FontStyles.apply_font(name, font)
             elif category == 'art':
-                style = random.choice(FontStyles.DECORATIVE_STYLES[:20])
+                style = random.choice(FontStyles.ART_STYLES)
                 styled_text = style.format(name)
             else:
                 font = random.choice(list(FontStyles.FONTS.keys()))
@@ -856,263 +1029,56 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     error_msg = str(context.error) if context.error else "Unknown error"
     logger.error(f"ᴇʀʀᴏʀ: {error_msg}")
 
-# ==================== RENDER WEBHOOK ENDPOINTS ====================
-@app.route('/')
-def home():
-    """Home page"""
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head><title>🎨 Stylish Name Bot</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; text-align: center; }
-        .status { padding: 20px; background: #f5f5f5; border-radius: 10px; margin: 20px auto; max-width: 500px; }
-        .btn { display: inline-block; padding: 12px 24px; margin: 10px; background: #0088cc; color: white; text-decoration: none; border-radius: 5px; }
-    </style>
-    </head>
-    <body>
-        <h1>🎨 Stylish Name Bot</h1>
-        <p>Create stylish names with 2000+ fonts and decorations!</p>
-        
-        <div class="status">
-            <p><strong>Status:</strong> ✅ Running</p>
-            <p><strong>Uptime:</strong> {:.0f} seconds</p>
-            <p><strong>Host:</strong> Render.com</p>
-        </div>
-        
-        <div>
-            <a href="/health" class="btn">❤️ Health Check</a>
-            <a href="/set_webhook" class="btn">🔗 Set Webhook</a>
-            <a href="/status" class="btn">📊 Status</a>
-        </div>
-        
-        <p style="margin-top: 40px;">Send <code>/start</code> to <a href="https://t.me/YourBotUsername">@YourBotUsername</a> on Telegram</p>
-    </body>
-    </html>
-    """format(time.time() - app_start_time)
-
-@app.route('/health')
-def health():
-    """Health check endpoint for Render and UptimeRobot"""
-    return 'OK', 200
-
-@app.route('/set_webhook')
-async def set_webhook_route():
-    """Set webhook for Telegram"""
-    try:
-        if not bot_application:
-            return "❌ Bot not initialized", 500
-        
-        current_url = request.host_url.rstrip('/')
-        webhook_url = f"{current_url}/webhook"
-        
-        await bot_application.bot.set_webhook(webhook_url)
-        
-        return f"""
-        <h2>✅ Webhook Updated!</h2>
-        <p><strong>URL:</strong> {webhook_url}</p>
-        <p><strong>Status:</strong> Webhook is now active!</p>
-        <p><strong>Next:</strong> Send /start to your bot on Telegram!</p>
-        <p><a href="/">Back to Home</a></p>
-        """
-    except Exception as e:
-        return f"<h2>❌ Error</h2><pre>{str(e)}</pre>", 500
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Handle Telegram webhook with immediate response (FIXES DOUBLE MESSAGES)"""
-    global last_ping_time
-    
-    try:
-        # Log the receipt
-        update_data = request.get_json(force=True)
-        update_id = update_data.get('update_id', 'unknown')
-        logger.info(f"📨 Received update {update_id}")
-        
-        # Update last ping time (activity detected)
-        last_ping_time = time.time()
-        
-        # Return IMMEDIATE response (critical to prevent Telegram timeout)
-        response = Response('OK', status=200, mimetype='text/plain')
-        
-        # Process in background thread
-        def process_in_background():
-            try:
-                update = Update.de_json(update_data, bot_application.bot)
-                
-                # Create new event loop for this thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                # Process the update
-                loop.run_until_complete(bot_application.process_update(update))
-                
-                loop.close()
-                logger.info(f"✅ Processed update {update_id}")
-                
-            except Exception as e:
-                logger.error(f"❌ Error processing update: {e}", exc_info=True)
-        
-        # Start background processing
-        thread = threading.Thread(target=process_in_background, daemon=True)
-        thread.start()
-        
-        logger.info(f"⚡ Immediate response sent for update {update_id}")
-        return response
-        
-    except Exception as e:
-        logger.error(f"❌ Webhook error: {e}", exc_info=True)
-        return 'ERROR', 500
-
-@app.route('/status')
-def status_page():
-    """Bot status page"""
-    global last_ping_time, app_start_time
-    
-    idle_time = time.time() - last_ping_time
-    uptime = time.time() - app_start_time
-    
-    hours = int(uptime // 3600)
-    minutes = int((uptime % 3600) // 60)
-    
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head><title>Bot Status</title></head>
-    <body>
-        <h1>🤖 Bot Status</h1>
-        
-        <div style="padding: 20px; background: #f5f5f5; border-radius: 10px; margin: 20px 0;">
-            <p><strong>Status:</strong> {'✅ ACTIVE' if idle_time < 300 else '⚠️ INACTIVE'}</p>
-            <p><strong>Uptime:</strong> {hours}h {minutes}m</p>
-            <p><strong>Last Activity:</strong> {int(idle_time)} seconds ago</p>
-            <p><strong>Render Sleeps After:</strong> 15 minutes (900 seconds)</p>
-            <p><strong>Keep-Alive Status:</strong> {'✅ ACTIVE (pings every 3 minutes)' if idle_time < 180 else '⚠️ NEEDS ATTENTION'}</p>
-        </div>
-        
-        <div>
-            <a href="/health">❤️ Health Check</a> | 
-            <a href="/set_webhook">🔗 Reset Webhook</a> | 
-            <a href="/">🏠 Home</a>
-        </div>
-    </body>
-    </html>
-    """
-
-@app.route('/keep-alive')
-def manual_keep_alive():
-    """Manual keep-alive ping"""
-    global last_ping_time
-    last_ping_time = time.time()
-    return '✅ Pinged!', 200
-
-# ==================== ULTRA-RELIABLE KEEP-ALIVE ====================
-def start_keep_alive():
-    """Keep Render from sleeping - pings every 3 minutes"""
-    global last_ping_time
-    
-    def ping_server():
-        ping_count = 0
-        
-        while True:
-            ping_count += 1
-            try:
-                # Get URL from environment or construct
-                url = os.environ.get('RENDER_EXTERNAL_URL', '')
-                if not url:
-                    # Try to get from service name
-                    service_name = os.environ.get('RENDER_SERVICE_NAME', '')
-                    if service_name:
-                        url = f"https://{service_name}.onrender.com"
-                    else:
-                        url = "http://localhost:10000"
-                
-                # Ping health endpoint
-                response = requests.get(f"{url}/health", timeout=10)
-                last_ping_time = time.time()
-                logger.info(f"✅ Keep-alive ping #{ping_count}: {response.status_code} at {time.ctime()}")
-                
-            except Exception as e:
-                logger.error(f"❌ Keep-alive ping #{ping_count} failed: {e}")
-            
-            # Wait 180 seconds (3 minutes) - less than Render's 15-minute sleep
-            time.sleep(180)
-    
-    # Start two threads for redundancy
-    for i in range(2):
-        thread = threading.Thread(target=ping_server, daemon=True, name=f"KeepAlive-{i+1}")
-        thread.start()
-    
-    logger.info("🚀 Ultra-reliable keep-alive started (3-minute pings, dual threads)")
-
-# ==================== BOT INITIALIZATION ====================
-def initialize_bot():
-    """Initialize the Telegram bot"""
-    global bot_application
-    
+# ==================== MAIN FUNCTION ====================
+def main():
+    """Main function"""
     try:
         # Initialize database
         Database.setup()
         
-        # Create bot handlers
+        # Create bot
         bot_handlers = BotHandlers()
         
         # Create application
         persistence = PicklePersistence(filepath="bot_persistence")
-        bot_application = Application.builder().token(BOT_TOKEN).persistence(persistence).build()
+        application = Application.builder().token(BOT_TOKEN).persistence(persistence).build()
         
         # Add error handler
-        bot_application.add_error_handler(error_handler)
+        application.add_error_handler(error_handler)
         
         # Add command handlers
-        bot_application.add_handler(CommandHandler("start", bot_handlers.start_command))
-        bot_application.add_handler(CommandHandler("help", bot_handlers.help_command))
-        bot_application.add_handler(CommandHandler("admin", bot_handlers.admin_command))
-        bot_application.add_handler(CommandHandler("stats", stats_command))
-        bot_application.add_handler(CommandHandler("broadcast", broadcast_command))
+        application.add_handler(CommandHandler("start", bot_handlers.start_command))
+        application.add_handler(CommandHandler("help", bot_handlers.help_command))
+        application.add_handler(CommandHandler("admin", bot_handlers.admin_command))
+        application.add_handler(CommandHandler("stats", stats_command))
+        application.add_handler(CommandHandler("broadcast", broadcast_command))
         
         # Add callback query handlers
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.ask_for_name, pattern='^create_style$'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.generate_random_name, pattern='^random_name$'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.show_bot_stats, pattern='^bot_stats$'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.help_command, pattern='^help$'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.show_category_styles, pattern='^cat_'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.handle_pagination, pattern='^page_'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.copy_text, pattern='^copy_'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.handle_navigation, pattern='^(back_to_start|new_name|change_category)$'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.admin_stats, pattern='^admin_stats$'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.admin_broadcast, pattern='^admin_broadcast$'))
-        bot_application.add_handler(CallbackQueryHandler(bot_handlers.admin_users, pattern='^admin_users$'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.ask_for_name, pattern='^create_style$'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.generate_random_name, pattern='^random_name$'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.show_bot_stats, pattern='^bot_stats$'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.help_command, pattern='^help$'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.show_category_styles, pattern='^cat_'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.handle_pagination, pattern='^page_'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.copy_text, pattern='^copy_'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.handle_navigation, pattern='^(back_to_start|new_name|change_category)$'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.admin_stats, pattern='^admin_stats$'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.admin_broadcast, pattern='^admin_broadcast$'))
+        application.add_handler(CallbackQueryHandler(bot_handlers.admin_users, pattern='^admin_users$'))
         
         # Add message handler
-        bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot_handlers.process_name))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot_handlers.process_name))
         
-        logger.info("✅ Bot initialized successfully")
-        return True
+        # Start bot
+        logger.info("🚀 sᴛʏʟɪsʜ ɴᴀᴍᴇ ʙᴏᴛ ɪs sᴛᴀʀᴛɪɴɢ...")
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            poll_interval=0.5,
+            drop_pending_updates=True
+        )
         
     except Exception as e:
-        logger.error(f"❌ Failed to initialize bot: {e}", exc_info=True)
-        return False
+        logger.error(f"ғᴀᴛᴀʟ ᴇʀʀᴏʀ: {e}")
 
-# ==================== MAIN STARTUP ====================
 if __name__ == '__main__':
-    # Initialize bot
-    if not initialize_bot():
-        logger.error("❌ Bot initialization failed. Exiting.")
-        exit(1)
-    
-    # Start keep-alive system
-    start_keep_alive()
-    
-    # Log startup info
-    logger.info("=" * 60)
-    logger.info("🎨 STYLISH NAME BOT STARTING UP")
-    logger.info(f"🤖 Bot: Initialized")
-    logger.info(f"🌐 Host: Render.com")
-    logger.info(f"⏰ Keep-alive: Active (3-minute pings)")
-    logger.info("=" * 60)
-    
-    # Start Flask server
-    port = int(os.environ.get('PORT', 10000))
-    logger.info(f"🚀 Starting server on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    main()

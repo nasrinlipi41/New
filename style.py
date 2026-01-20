@@ -20,7 +20,7 @@ from contextlib import contextmanager
 
 # ==================== CONFIGURATION ====================
 BOT_TOKEN = '8520054544:AAE_fT379ilqkYBtnH8L7B4JsITpWegJfu4'
-ADMIN_IDS = [5487394544]
+ADMIN_IDS = [7728700576]
 DB_NAME = 'stylish_name_bot.db'
 ITEMS_PER_PAGE = 10
 MAX_NAME_LENGTH = 30

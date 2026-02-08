@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Configuration - Get from Environment Variables (for Render.com)
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 PORT = int(os.environ.get('PORT', 10000))  # Render.com provides PORT
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB Telegram limit
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 50MB Telegram limit
 ALLOWED_EXTENSIONS = {
     '.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm',
     '.mp3', '.wav', '.ogg', '.m4a', '.flac',
